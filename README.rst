@@ -1,4 +1,5 @@
-PyComp - python subset compiler, that is intended to be self-hosting
-====================================================================
+PyComp - python subset compiler
+===============================
 
-Inspired by `Writing a compiler in Ruby, bottom up <http://www.hokstad.com/compiler>`_
+It is intended to become self-hosting.  Inspired by 
+`Writing a compiler in Ruby, bottom up <http://www.hokstad.com/compiler>`_

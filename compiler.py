@@ -3,7 +3,7 @@
 
 from operator import itemgetter
 
-from utils import compile_nodes, reindent
+from utils import compile_nodes, reindent, shift_right, pp_join
 
 
 def compile_program(body):
@@ -56,6 +56,9 @@ class AstNode(object):
     def compile(self, env):
         raise NotImplementedError
 
+    def pretty_print(self):
+        raise NotImplementedError
+
 
 class FnDef(AstNode):
     def __init__(self, name, args, body):
@@ -86,21 +89,38 @@ class FnDef(AstNode):
             .cfi_endproc
         '''
         return output
+    
+    def pretty_print(self):
+        heading = 'def {name}({args}):'.format(
+                name=self.name, args=pp_join(', ', self.args))
+        return heading + '\n' + shift_right(pp_join('\n', self.body))
+
+
+class FnDefArg(AstNode):
+    def __init__(self, name):
+        self.name = name
+
+    def pretty_print(self):
+        return self.name
 
 
 class FnCall(AstNode):
-    def __init__(self, fn_name, args):
-        self.fn_name = fn_name
+    def __init__(self, name, args):
+        self.name = name
         self.args = args
 
     def compile(self, env):
         assert len(self.args) == 1
         return '''
             movl    {arg}, %edi
-            call    {fn_name}
+            call    {name}
         '''.format(
                 arg=self.args[0].compile(env),
-                fn_name=self.fn_name)
+                name=self.name)
+
+    def pretty_print(self):
+        return '{name}({args})'.format(
+                name=self.name, args=pp_join(', ', self.args))
 
 
 class Return(AstNode):
@@ -112,27 +132,28 @@ class Return(AstNode):
             movl    {value}, %eax
         '''.format(value=self.value.compile(env))
 
+    def pretty_print(self):
+        return 'return {value}'.format(value=self.value.pretty_print())
+
 
 class ValueNode(AstNode):
     def __init__(self, value):
         self.value = value
+
+    def pretty_print(self):
+        return unicode(self.value)
 
 
 class StringConst(ValueNode):
     def compile(self, env):
         const_label = env.get_const_label(self.value)
         return '$%s' % const_label
+    
+    def pretty_print(self):
+        # FIXME - " quotes
+        return '"%s"' % self.value.encode('string_escape') 
 
 
 class IntConst(ValueNode):
     def compile(self, env):
         return '$%d' % self.value
-
-
-if __name__ == '__main__':
-    print Compiler().compile(
-            [["puts", "Foo, bar"],
-             ["printf", "Hello World!\\n"]]
-            )
-
-
