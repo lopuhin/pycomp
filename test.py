@@ -46,6 +46,20 @@ def main():
                 )]
         self.check_output('test_multi_args', program, 
                 'Hello, 1-st user kostia!\n' + ' '.join(args))
+    
+    def test_subexpr_fn_call(self):
+        program = [
+            FnDef('main', [], [
+                FnCall('printf', [
+                    StringConst('Size of string "%s" is %d'),
+                    StringConst('String'),
+                    FnCall('strlen', [StringConst('String')])]),
+                Return(IntConst(0))]
+                )]
+        self.check_output('test_subexpr_fn_call', program, 
+                'Size of string "String" is 6')
+    
+
 
     def check_output(self, test_name, program, expected):
         asm_output = compile_program(program)

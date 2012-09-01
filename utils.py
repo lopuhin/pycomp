@@ -27,6 +27,10 @@ def pp_join(sep, ast_nodes):
     return sep.join(node.pretty_print() for node in ast_nodes)
 
 
+def escape_string_in_quotes(s):
+    return '"%s"' % s.encode('string_escape').replace('"', r'\"')
+
+
 def make_executable(name, asm_output):
     source_name = os.path.join('.', name + '.s')
     output_name = os.path.join('.', name + '.out')

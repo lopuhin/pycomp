@@ -3,7 +3,12 @@
 
 from operator import itemgetter
 
-from utils import compile_nodes, reindent, shift_right, pp_join
+from utils import compile_nodes, reindent, shift_right, pp_join, \
+        escape_string_in_quotes
+
+
+PTR_SIZE = 8
+CALL_REG_ORDER = ['edi', 'esi', 'edx', 'ecx', 'r8d', 'r9d']
 
 
 def compile_program(body):
@@ -46,9 +51,8 @@ class Environment(object):
                 key=itemgetter(1)):
             output += '''
             {label}:
-                .string "{value}"
-            '''.format(label=label, value=value.encode('string_escape'))
-            # FIXME - " quotes
+                .string {value}
+            '''.format(label=label, value=escape_string_in_quotes(value))
         return output 
 
 
@@ -109,27 +113,44 @@ class FnCall(AstNode):
         self.name = name
         self.args = args
     
-    CALL_REG_ORDER = ['edi', 'esi', 'edx', 'ecx', 'r8d', 'r9d']
-
     def compile(self, env):
-        arg_passing = []
-        # passed via registers
-        for reg, arg in zip(self.CALL_REG_ORDER, self.args):
-            arg_passing.append('movl    {arg}, %{reg}'.format(
-                arg=arg.compile(env), reg=reg))
+        compiled_args = []
+
         # passed via stack
-        stack_shift = 0
-        for arg in self.args[len(self.CALL_REG_ORDER):]:
-            arg_passing.append('movq    {arg}, {stack_shift}(%rsp)'.format(
-                arg=arg.compile(env), stack_shift=stack_shift or ''))
-            stack_shift += 8
-        if stack_shift:
-            arg_passing.append('subq    ${stack_shift}, %rsp'.format(
+        stack_shift = PTR_SIZE * (len(self.args) - len(CALL_REG_ORDER))
+        if stack_shift > 0:
+            compiled_args.append('subq    ${stack_shift}, %rsp'.format(
                 stack_shift=stack_shift))
-        arg_passing.reverse()
-	arg_passing.append('movl    $0, %eax')
-        return '\n'.join(arg_passing) + '\n' + 'call    {name}'.format(
+            for arg in reversed(self.args[len(CALL_REG_ORDER):]):
+                stack_shift -= PTR_SIZE
+                arg_label, arg_op = self.compile_arg(env, arg)
+                if arg_op:
+                    compiled_args.append(arg_op)
+                compiled_args.append('movq    {arg}, {stack_shift}(%rsp)'.format(
+                    arg=arg_label, stack_shift=stack_shift or ''))
+
+        # passed via registers
+        for reg, arg in reversed(zip(CALL_REG_ORDER, self.args)):
+            arg_label, arg_op = self.compile_arg(env, arg)
+            if arg_op:
+                compiled_args.append(arg_op)
+            compiled_args.append('movl    {arg}, %{reg}'.format(
+                arg=arg_label, reg=reg))
+	compiled_args.append('movl    $0, %eax')
+
+        return '\n'.join(compiled_args) + '\n' + 'call    {name}'.format(
             name=self.name)
+    
+    def compile_arg(self, env, arg):
+        ''' Return arg_label and compiled arg calculation
+        '''
+        if isinstance(arg, ConstNode):
+            return arg.compile(env), None
+        elif isinstance(arg, FnCall):
+            # FIXME - case when this call and parent call both need stack
+            return '%eax', arg.compile(env)
+        else:
+            assert False
 
     def pretty_print(self):
         return '{name}({args})'.format(
@@ -157,16 +178,19 @@ class ValueNode(AstNode):
         return unicode(self.value)
 
 
-class StringConst(ValueNode):
+class ConstNode(ValueNode):
+    pass
+
+
+class StringConst(ConstNode):
     def compile(self, env):
         const_label = env.get_const_label(self.value)
         return '$%s' % const_label
     
     def pretty_print(self):
         # FIXME - " quotes
-        return '"%s"' % self.value.encode('string_escape') 
+        return escape_string_in_quotes(self.value)
 
-
-class IntConst(ValueNode):
+class IntConst(ConstNode):
     def compile(self, env):
         return '$%d' % self.value
