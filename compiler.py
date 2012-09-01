@@ -83,7 +83,7 @@ class FnDef(AstNode):
         '''.format(name=self.name, fn_label=fn_label)
         output += compile_nodes(self.body, env)
         output += '''
-            popq    %rbp
+            leave
             .cfi_def_cfa 7, 8
             ret
             .cfi_endproc
@@ -108,15 +108,28 @@ class FnCall(AstNode):
     def __init__(self, name, args):
         self.name = name
         self.args = args
+    
+    CALL_REG_ORDER = ['edi', 'esi', 'edx', 'ecx', 'r8d', 'r9d']
 
     def compile(self, env):
-        assert len(self.args) == 1
-        return '''
-            movl    {arg}, %edi
-            call    {name}
-        '''.format(
-                arg=self.args[0].compile(env),
-                name=self.name)
+        arg_passing = []
+        # passed via registers
+        for reg, arg in zip(self.CALL_REG_ORDER, self.args):
+            arg_passing.append('movl    {arg}, %{reg}'.format(
+                arg=arg.compile(env), reg=reg))
+        # passed via stack
+        stack_shift = 0
+        for arg in self.args[len(self.CALL_REG_ORDER):]:
+            arg_passing.append('movq    {arg}, {stack_shift}(%rsp)'.format(
+                arg=arg.compile(env), stack_shift=stack_shift or ''))
+            stack_shift += 8
+        if stack_shift:
+            arg_passing.append('subq    ${stack_shift}, %rsp'.format(
+                stack_shift=stack_shift))
+        arg_passing.reverse()
+	arg_passing.append('movl    $0, %eax')
+        return '\n'.join(arg_passing) + '\n' + 'call    {name}'.format(
+            name=self.name)
 
     def pretty_print(self):
         return '{name}({args})'.format(
